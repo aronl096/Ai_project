@@ -2,7 +2,7 @@ import requests
 import json
 #Made by SAGI,EDEN and AARON
 # Replace your api key please
-api_key = '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'
+api_key = 'api_key'
 
 # API endpoint URL
 api_url = 'https://api.chatgpt.com/text_generation'
