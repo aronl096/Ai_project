@@ -1,0 +1,88 @@
+# Import necessary libraries
+from transformers import AutoProcessor ,AutoModelForCTC
+import speech_recognition as sr
+import torch
+import io
+from pydub import AudioSegment
+import pyttsx3
+import openai
+from textblob import TextBlob
+import language_tool_python
+
+# Set your OpenAI API key
+openai.api_key = ''
+
+# Initialize the processor and model for speech recognition
+processor = AutoProcessor.from_pretrained("sagir567/wav2vec2-base-timit-demo-colab")
+model = AutoModelForCTC.from_pretrained("sagir567/wav2vec2-base-timit-demo-colab")
+
+# Initialize the recognizer
+r = sr.Recognizer()
+
+# Initialize the text-to-speech engine
+engine = pyttsx3.init()
+
+
+# Function to correct the text
+def normalize_and_correct_text(text):
+    # Correct spelling using TextBlob
+    blob = TextBlob(text)
+    corrected_text = str(blob.correct())
+
+    # Correct grammar using LanguageTool
+    tool = language_tool_python.LanguageTool('en-US')
+    matches = tool.check(corrected_text)
+    final_corrected_text = language_tool_python.utils.correct(corrected_text ,matches)
+
+    return final_corrected_text
+
+
+# Start listening from the microphone
+with sr.Microphone(sample_rate=16000) as source:
+    print("Listening... Press Ctrl+C to stop.")
+    while True:
+        try:
+            # Listen to the source
+            audio = r.listen(source)
+            data = io.BytesIO(audio.get_wav_data())
+            clip = AudioSegment.from_file(data)
+            x = torch.FloatTensor(clip.get_array_of_samples()).unsqueeze(0)
+
+            # Ensure x has the correct shape for the model
+            # print(f"Shape of x after adding batch dimension: {x.shape}")
+
+            # Process the input using the processor directly
+            inputs = processor(x ,sampling_rate=16000 ,return_tensors='pt' ,padding='longest').input_values.squeeze(0)
+            # print(f"Shape of inputs after processing: {inputs.shape}")
+
+            logits = model(inputs).logits
+            tokens = torch.argmax(logits ,axis=-1)
+            text = processor.batch_decode(tokens ,skip_special_tokens=True)
+            text_str = ' '.join(text)  # Convert list to string
+
+            # Correct the text
+            correct_text = normalize_and_correct_text(text_str)
+            print("You said:" ,correct_text)
+
+            # Generate a response using OpenAI's API
+            response = openai.Completion.create(
+                engine="babbage-002" ,  # Specify the engine
+                prompt=correct_text ,  # Pass the user's spoken text as prompt
+                max_tokens=50 ,  # Adjust max tokens as needed for the response length
+                temperature=0.7 ,  # Adjust temperature for randomness in responses
+                n=1  # Number of responses to generate
+            )
+
+            # Get the generated response
+            chat_gpt_response = response.choices[0].text.strip()
+            print("ChatGPT response:" ,chat_gpt_response)
+
+            # Speak the response
+           # engine.say(chat_gpt_response)
+           # engine.runAndWait()
+
+        except KeyboardInterrupt:
+            print("Stopped listening.")
+            break
+        except Exception as e:
+            print(f"An error occurred: {e}")
